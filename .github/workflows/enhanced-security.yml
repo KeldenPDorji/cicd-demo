@@ -110,6 +110,11 @@ jobs:
             echo "✅ SNYK_TOKEN is configured"
           fi
 
+      - name: Create SARIF output directory
+        run: |
+          mkdir -p sarif-results
+          chmod 755 sarif-results
+
       - name: Run Snyk Dependency Scan
         if: matrix.scan-type == 'dependencies'
         uses: snyk/actions/maven@master
@@ -120,7 +125,7 @@ jobs:
           args: >
             --severity-threshold=medium
             --project-name=${{ github.repository }}-dependencies
-            --sarif-file-output=snyk-dependencies.sarif
+            --sarif-file-output=sarif-results/snyk-dependencies.sarif
 
       - name: Run Snyk Code Security Scan (SAST)
         if: matrix.scan-type == 'code'
@@ -133,20 +138,33 @@ jobs:
           args: >
             --severity-threshold=high
             --project-name=${{ github.repository }}-code
-            --sarif-file-output=snyk-code.sarif
+            --sarif-file-output=sarif-results/snyk-code.sarif
 
       - name: Debug - List generated files
         if: always()
         run: |
           echo "Files in current directory:"
           ls -la
+          echo "Files in sarif-results directory:"
+          ls -la sarif-results/ 2>/dev/null || echo "No sarif-results directory"
           echo "Looking for SARIF files:"
           find . -name "*.sarif" -type f || echo "No SARIF files found"
 
-      - name: Create empty SARIF file if scan failed
-        if: always() && hashFiles('snyk-${{ matrix.scan-type }}.sarif') == ''
+      - name: Copy SARIF files to root and create fallback if needed
+        if: always()
         run: |
-          echo '{
+          SCAN_TYPE="${{ matrix.scan-type }}"
+          SARIF_FILE="snyk-${SCAN_TYPE}.sarif"
+          
+          # Copy from sarif-results if exists
+          if [ -f "sarif-results/${SARIF_FILE}" ]; then
+            echo "📄 Copying ${SARIF_FILE} from sarif-results to root"
+            cp "sarif-results/${SARIF_FILE}" "${SARIF_FILE}"
+          else
+            echo "⚠️ No SARIF file found in sarif-results, creating fallback"
+            # Create fallback SARIF file
+            cat > "${SARIF_FILE}" << 'EOF'
+          {
             "version": "2.1.0",
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
             "runs": [
@@ -160,7 +178,17 @@ jobs:
                 "results": []
               }
             ]
-          }' > snyk-${{ matrix.scan-type }}.sarif
+          }
+          EOF
+          fi
+          
+          # Verify file exists
+          if [ -f "${SARIF_FILE}" ]; then
+            echo "✅ SARIF file ready: ${SARIF_FILE}"
+            ls -la "${SARIF_FILE}"
+          else
+            echo "❌ Failed to create SARIF file: ${SARIF_FILE}"
+          fi
 
       - name: Upload SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
