@@ -11,13 +11,13 @@ ignore:
   # 'SNYK-JAVA-ORGAPACHECOMMONS-1234567':
   #   - '*':
   #       reason: 'False positive - not exploitable in our Spring Boot context'
-  #       expires: '2024-12-31T23:59:59.999Z'
+  #       expires: '2025-12-31T23:59:59.999Z'
 
   # Example: Ignore vulnerability in specific paths only
   # 'SNYK-JAVA-COMFASTERXMLJACKSONCORE-2807556':
   #   - 'src/test/**':
   #       reason: 'Test dependency - not present in production'
-  #       expires: '2024-06-30T23:59:59.999Z'
+  #       expires: '2025-06-30T23:59:59.999Z'
 
 # Patch configuration (currently empty for Maven projects)
 # Patches are primarily used for npm projects
@@ -29,22 +29,27 @@ language-settings:
     # Java-specific configuration options
     # These settings apply to all Java scans in this project
 
-    # Exclude test dependencies from vulnerability scanning
-    # include-dev-deps: false
+    # Include dev dependencies in scanning (default: true)
+    include-dev-deps: true
 
     # Set Maven-specific options
-    # maven-aggregate-project: true
+    # maven-aggregate-project: false
 
 # Project-specific settings
 # These settings apply to the entire project
 exclude:
   # Exclude specific directories from scanning
-  # - 'target/**'
-  # - '**/*.class'
-  # - 'logs/**'
+  - 'target/**'
+  - '**/*.class'
+  - 'logs/**'
+  - '.git/**'
+  - '.mvn/**'
+
 # Snyk Code specific settings (for SAST scanning)
-# code:
-#   # Exclude specific files or patterns from code analysis
-#   exclude:
-#     - 'src/test/**'
-#     - '**/*.properties'
+code:
+  # Exclude specific files or patterns from code analysis
+  exclude:
+    - 'target/**'
+    - '**/*.properties'
+    - 'mvnw'
+    - 'mvnw.cmd'

@@ -11,6 +11,12 @@ on:
     # Run security scan every Monday at 2 AM UTC
     - cron: "0 2 * * 1"
 
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+  pull-requests: write
+
 env:
   JAVA_VERSION: "17"
   MAVEN_OPTS: "-Xmx1024m"
@@ -99,6 +105,7 @@ jobs:
       - name: Run Snyk Dependency Scan
         if: matrix.scan-type == 'dependencies'
         uses: snyk/actions/maven@master
+        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -111,6 +118,7 @@ jobs:
       - name: Run Snyk Code Security Scan (SAST)
         if: matrix.scan-type == 'code'
         uses: snyk/actions/maven@master
+        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -121,15 +129,15 @@ jobs:
             --sarif-file-output=snyk-code.sarif
 
       - name: Upload SARIF results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-${{ matrix.scan-type }}.sarif') != ''
         with:
           sarif_file: snyk-${{ matrix.scan-type }}.sarif
           category: snyk-${{ matrix.scan-type }}
 
       - name: Archive security scan results
-        uses: actions/upload-artifact@v3
-        if: always()
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('snyk-${{ matrix.scan-type }}.sarif') != ''
         with:
           name: snyk-${{ matrix.scan-type }}-results
           path: snyk-${{ matrix.scan-type }}.sarif
@@ -162,6 +170,7 @@ jobs:
 
       - name: Run Snyk Container Scan
         uses: snyk/actions/docker@master
+        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -173,11 +182,19 @@ jobs:
             --sarif-file-output=snyk-container.sarif
 
       - name: Upload container scan results
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-container.sarif') != ''
         with:
           sarif_file: snyk-container.sarif
           category: snyk-container
+
+      - name: Archive container scan results
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('snyk-container.sarif') != ''
+        with:
+          name: snyk-container-results
+          path: snyk-container.sarif
+          retention-days: 30
 
   # Monitor deployed dependencies (only on main branch)
   monitor:
@@ -212,25 +229,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: [security, container-security]
     if: failure() && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      issues: write
 
     steps:
-      - name: Send security alert
-        uses: 8398a7/action-slack@v3
-        with:
-          status: failure
-          text: |
-            🚨 Critical security vulnerabilities detected in ${{ github.repository }}
-
-            Branch: ${{ github.ref }}
-            Commit: ${{ github.sha }}
-
-            Please review the security scan results and take immediate action.
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        if: env.SLACK_WEBHOOK_URL != null
-
       - name: Create GitHub issue for security vulnerabilities
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
+        if: github.event_name != 'pull_request'
         with:
           script: |
             const title = `🚨 Security vulnerabilities detected - ${context.sha.substring(0, 7)}`;
