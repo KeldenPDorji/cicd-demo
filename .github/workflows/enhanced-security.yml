@@ -156,14 +156,11 @@ jobs:
           SCAN_TYPE="${{ matrix.scan-type }}"
           SARIF_FILE="snyk-${SCAN_TYPE}.sarif"
           
-          # Copy from sarif-results if exists
-          if [ -f "sarif-results/${SARIF_FILE}" ]; then
-            echo "📄 Copying ${SARIF_FILE} from sarif-results to root"
-            cp "sarif-results/${SARIF_FILE}" "${SARIF_FILE}"
-          else
+          # Ensure we have a SARIF file in the writable directory
+          if [ ! -f "sarif-results/${SARIF_FILE}" ]; then
             echo "⚠️ No SARIF file found in sarif-results, creating fallback"
-            # Create fallback SARIF file
-            cat > "${SARIF_FILE}" << 'EOF'
+            # Create fallback SARIF file in writable directory
+            cat > "sarif-results/${SARIF_FILE}" << 'EOF'
           {
             "version": "2.1.0",
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -182,19 +179,20 @@ jobs:
           EOF
           fi
           
-          # Verify file exists
-          if [ -f "${SARIF_FILE}" ]; then
-            echo "✅ SARIF file ready: ${SARIF_FILE}"
-            ls -la "${SARIF_FILE}"
+          # Verify file exists in writable directory
+          if [ -f "sarif-results/${SARIF_FILE}" ]; then
+            echo "✅ SARIF file ready: sarif-results/${SARIF_FILE}"
+            ls -la "sarif-results/${SARIF_FILE}"
           else
-            echo "❌ Failed to create SARIF file: ${SARIF_FILE}"
+            echo "❌ Failed to create SARIF file!"
+            exit 1
           fi
 
       - name: Upload SARIF results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: snyk-${{ matrix.scan-type }}.sarif
+          sarif_file: sarif-results/snyk-${{ matrix.scan-type }}.sarif
           category: snyk-${{ matrix.scan-type }}
 
       - name: Archive security scan results
@@ -202,7 +200,7 @@ jobs:
         if: always()
         with:
           name: snyk-${{ matrix.scan-type }}-results
-          path: snyk-${{ matrix.scan-type }}.sarif
+          path: sarif-results/snyk-${{ matrix.scan-type }}.sarif
           retention-days: 30
 
   # Container security scanning
@@ -230,6 +228,11 @@ jobs:
           docker build -t cicd-demo:${{ github.sha }} .
           docker tag cicd-demo:${{ github.sha }} cicd-demo:latest
 
+      - name: Create SARIF output directory
+        run: |
+          mkdir -p sarif-results
+          chmod 755 sarif-results
+
       - name: Run Snyk Container Scan
         uses: snyk/actions/docker@master
         continue-on-error: true
@@ -241,12 +244,15 @@ jobs:
             --severity-threshold=high
             --file=dockerfile
             --exclude-base-image-vulns
-            --sarif-file-output=snyk-container.sarif
+            --sarif-file-output=sarif-results/snyk-container.sarif
 
-      - name: Create empty SARIF file if container scan failed
-        if: always() && hashFiles('snyk-container.sarif') == ''
+      - name: Create fallback SARIF file if container scan failed
+        if: always()
         run: |
-          echo '{
+          if [ ! -f "sarif-results/snyk-container.sarif" ]; then
+            echo "Creating fallback container SARIF file"
+            cat > "sarif-results/snyk-container.sarif" << 'EOF'
+          {
             "version": "2.1.0",
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
             "runs": [
@@ -260,13 +266,15 @@ jobs:
                 "results": []
               }
             ]
-          }' > snyk-container.sarif
+          }
+          EOF
+          fi
 
       - name: Upload container scan results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: snyk-container.sarif
+          sarif_file: sarif-results/snyk-container.sarif
           category: snyk-container
 
       - name: Archive container scan results
@@ -274,7 +282,7 @@ jobs:
         if: always()
         with:
           name: snyk-container-results
-          path: snyk-container.sarif
+          path: sarif-results/snyk-container.sarif
           retention-days: 30
 
   # Monitor deployed dependencies (only on main branch)

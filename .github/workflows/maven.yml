@@ -56,14 +56,11 @@ jobs:
         run: |
           SARIF_FILE="snyk-maven.sarif"
           
-          # Copy from sarif-results if exists
-          if [ -f "sarif-results/${SARIF_FILE}" ]; then
-            echo "📄 Copying ${SARIF_FILE} from sarif-results to root"
-            cp "sarif-results/${SARIF_FILE}" "${SARIF_FILE}"
-          else
+          # Ensure we have a SARIF file in the writable directory
+          if [ ! -f "sarif-results/${SARIF_FILE}" ]; then
             echo "⚠️ No SARIF file found, creating fallback"
-            # Create fallback SARIF file
-            cat > "${SARIF_FILE}" << 'EOF'
+            # Create fallback SARIF file in writable directory
+            cat > "sarif-results/${SARIF_FILE}" << 'EOF'
           {
             "version": "2.1.0",
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -81,8 +78,13 @@ jobs:
           }
           EOF
           fi
+          
+          if [ -f "sarif-results/${SARIF_FILE}" ]; then
+            echo "✅ SARIF file ready: sarif-results/${SARIF_FILE}"
+            ls -la "sarif-results/${SARIF_FILE}"
+          fi
       - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: snyk-maven.sarif
+          sarif_file: sarif-results/snyk-maven.sarif
